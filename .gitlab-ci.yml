@@ -1,0 +1,278 @@
+###############################################################################
+##### --------------------  backend apps pipeline ----------------------- #####
+###############################################################################
+
+variables:
+  IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
+  CI_REGISTRY: cr.yandex/crp6fd91rf3bhoqildrp
+  DB_ADDRESS: "cockroachdb.cockroachdb-${CI_COMMIT_REF_NAME}"
+
+stages:
+  - build
+  - migration
+  - clone_charts
+  - deploy
+
+#-------------------------------------------------------------------------------
+
+.build_template: &build_template
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  stage: build
+  script:
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(echo -n "oauth:${CI_REGISTRY_AUTH}" | base64 -w 0)\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/$app/Dockerfile --destination $CI_REGISTRY/$app:$IMAGE_TAG;
+  tags:
+    - k8s
+
+build_jobber:
+  <<: *build_template
+  variables:
+    app: jobber
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - jobber/**/*
+
+build_leads:
+  <<: *build_template
+  variables:
+    app: leads
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - leads/**/*
+
+build_notif:
+  <<: *build_template
+  variables:
+    app: notif
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - notif/**/*
+
+build_quiz:
+  <<: *build_template
+  variables:
+    app: quiz
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - quiz/**/*
+
+build_show:
+  <<: *build_template
+  variables:
+    app: show
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - show/**/*
+
+build_uploader:
+  <<: *build_template
+  variables:
+    app: uploader
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - uploader/**/*
+
+build_users:
+  <<: *build_template
+  variables:
+    app: users
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - users/**/*
+
+      
+#-------------------------------------------------------------------------------
+
+.migration_template:
+  stage: migration
+  script:
+    - echo "${DB_ADDRESS}"
+    - sed -i "s/host=dbAddress/host=${DB_ADDRESS}/" /dbconfig.yml
+    - /opt/sql-migrate up -config=/dbconfig.yml
+  tags:
+    - k8s
+
+migration_users:
+  extends: .migration_template
+  image: $CI_REGISTRY/users:$IMAGE_TAG
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - users/**/*
+
+migration_leads:
+  extends: .migration_template
+  image: $CI_REGISTRY/leads:$IMAGE_TAG
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - leads/**/*
+  # needs:
+  #   - job: migration_users
+
+migration_quiz:
+  extends: .migration_template
+  image: $CI_REGISTRY/quiz:$IMAGE_TAG
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - quiz/**/*
+  # needs:
+  #   - job: migration_leads
+
+migration_notif:
+  extends: .migration_template
+  image: $CI_REGISTRY/notif:$IMAGE_TAG
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - notif/**/*
+  # needs:
+  #   - job: migration_quiz
+
+
+#-------------------------------------------------------------------------------
+
+clone_helm_charts:
+  stage: clone_charts
+  image: alpine/git:v2.45.2
+  script:
+    - git clone --branch main https://gitlab-ci-token:${CI_JOB_TOKEN}@gl.lifeisfile.com/eugene.k1387/charts.git ./charts
+  artifacts:
+    paths:
+      - ./charts
+    expire_in: 1 hour
+  only:
+    refs:
+      - main
+      - master
+  tags:
+    - k8s
+
+.deploy_backend_apps_template: &deploy_backend
+  stage: deploy
+  image: alpine/helm:3.16
+  script:
+    - echo "Deploying $app..."
+    - |
+      helm upgrade --install "$app" "./charts/service-chart" \
+      --values "./charts/service-chart/values_$app.yaml" \
+      --namespace ${CI_COMMIT_REF_NAME} \
+      --create-namespace \
+      --set image.tag=${IMAGE_TAG} \
+      --wait
+  dependencies:
+    - clone_helm_charts
+  environment:
+    name: $CI_COMMIT_REF_NAME
+    url: http://land.$CI_COMMIT_REF_NAME.jk-lab.ru
+  tags:
+    - k8s
+
+deploy_jobber:
+  <<: *deploy_backend
+  variables:
+    app: jobber
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - jobber/**/*
+
+deploy_leads:
+  <<: *deploy_backend
+  variables:
+    app: leads
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - leads/**/*
+
+deploy_notif:
+  <<: *deploy_backend
+  variables:
+    app: notif
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - notif/**/*
+
+deploy_quiz:
+  <<: *deploy_backend
+  variables:
+    app: quiz
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - quiz/**/*
+
+deploy_show:
+  <<: *deploy_backend
+  variables:
+    app: show
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - show/**/*
+
+deploy_uploader:
+  <<: *deploy_backend
+  variables:
+    app: uploader
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - uploader/**/*
+
+deploy_users:
+  <<: *deploy_backend
+  variables:
+    app: users
+  only:
+    refs:
+      - main
+      - master
+    changes:
+      - users/**/*
