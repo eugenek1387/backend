@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-leads
+  labels:
+    app: migrate
+spec:
+  template:
+    spec:
+      containers:
+      - name: migrate-leads
+        image: leads
+        imagePullPolicy: Always
+        command:
+          - "/opt/sql-migrate"
+          - "up"
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ycr-json-key

@@ -1,0 +1,7 @@
+
+-- +migrate Up
+ALTER TABLE leads ADD COLUMN agent VARCHAR(500);
+ALTER TABLE leads ADD COLUMN ip VARCHAR(100);
+-- +migrate Down
+ALTER TABLE leads DROP COLUMN agent;
+ALTER TABLE leads DROP COLUMN ip;

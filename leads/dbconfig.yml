@@ -1,0 +1,4 @@
+development:
+    dialect: postgres
+    datasource: dbname=leads sslmode=disable port=26257 user=root host=dbAddress
+    dir: /migrations
